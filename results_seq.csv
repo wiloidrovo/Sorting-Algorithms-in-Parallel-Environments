@@ -1,0 +1,12 @@
+n,pattern,time,sorted
+1000000,random,0.054624,yes
+2000000,random,0.107967,yes
+3000000,random,0.173361,yes
+4000000,random,0.238055,yes
+5000000,random,0.315257,yes
+6000000,random,0.404095,yes
+7000000,random,0.490396,yes
+8000000,random,0.568011,yes
+9000000,random,0.662751,yes
+10000000,random,0.764834,yes
+20000000,random,1.901799,yes
