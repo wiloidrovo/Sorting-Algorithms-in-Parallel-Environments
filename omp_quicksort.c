@@ -7,7 +7,7 @@
 #include <omp.h>
 
 /* ============================
-     Swap
+   Swap
    ============================ */
 static inline void swap(int *a, int *b) {
     int t = *a;
@@ -16,12 +16,9 @@ static inline void swap(int *a, int *b) {
 }
 
 /* ============================
-     Randomized partition
+   Partition (pivot fijo)
    ============================ */
 static int partition(int *arr, int low, int high) {
-    int pivot_index = low + rand() % (high - low + 1);
-    swap(&arr[pivot_index], &arr[high]);
-
     int pivot = arr[high];
     int i = low - 1;
 
@@ -37,28 +34,54 @@ static int partition(int *arr, int low, int high) {
 }
 
 /* ============================
-     Parallel QuickSort (tasks)
+   QuickSort secuencial
    ============================ */
-static void quicksort_omp(int *arr, int low, int high, int cutoff) {
-
+static void quicksort_seq(int *arr, int low, int high) {
     while (low < high) {
         int p = partition(arr, low, high);
 
-        /* Crear tarea solo si el subproblema es suficientemente grande */
-        if ((p - 1 - low) > cutoff) {
-            #pragma omp task
-            quicksort_omp(arr, low, p - 1, cutoff);
+        /* tail-recursion minimization */
+        if (p - low < high - p) {
+            quicksort_seq(arr, low, p - 1);
+            low = p + 1;
         } else {
-            quicksort_omp(arr, low, p - 1, cutoff);
+            quicksort_seq(arr, p + 1, high);
+            high = p - 1;
         }
-
-        /* Avanzar por la otra mitad */
-        low = p + 1;
     }
 }
 
 /* ============================
-      Check sorted
+   QuickSort paralelo (OpenMP tasks)
+   ============================ */
+static void quicksort_omp(int *arr, int low, int high, int cutoff) {
+
+    if (high - low <= cutoff) {
+        /* Subproblema pequeño -> versión secuencial */
+        quicksort_seq(arr, low, high);
+        return;
+    }
+
+    int p = partition(arr, low, high);
+
+    /* Lado izquierdo en una tarea */
+    #pragma omp task shared(arr) firstprivate(low, p, cutoff)
+    {
+        quicksort_omp(arr, low, p - 1, cutoff);
+    }
+
+    /* Lado derecho en otra tarea */
+    #pragma omp task shared(arr) firstprivate(p, high, cutoff)
+    {
+        quicksort_omp(arr, p + 1, high, cutoff);
+    }
+
+    /* Esperar a ambas tareas antes de regresar */
+    #pragma omp taskwait
+}
+
+/* ============================
+   Check sorted
    ============================ */
 static int is_sorted(const int *arr, int64_t n) {
     for (int64_t i = 1; i < n; i++)
@@ -67,7 +90,7 @@ static int is_sorted(const int *arr, int64_t n) {
 }
 
 /* ============================
-     Quasi-sorted generator
+   Quasi-sorted generator
    ============================ */
 void make_quasi_sorted(int *arr, int64_t n, unsigned int seed) {
     srand(seed);
@@ -134,18 +157,20 @@ int main(int argc, char **argv) {
     }
 
     int threads = omp_get_max_threads();
-    int cutoff = 10000; // tamaño mínimo para crear tareas
-    double start, end;
+    int cutoff  = 50000;
 
-    start = omp_get_wtime();
+    double start = 0.0, end = 0.0;
 
     #pragma omp parallel
     {
-        #pragma omp single nowait
-        quicksort_omp(arr, 0, (int)n - 1, cutoff);
+        #pragma omp single
+        {
+            start = omp_get_wtime();
+            quicksort_omp(arr, 0, (int)n - 1, cutoff);
+            #pragma omp taskwait
+            end = omp_get_wtime();
+        }
     }
-
-    end = omp_get_wtime();
 
     double t = end - start;
     int ok = is_sorted(arr, n);
